@@ -1,0 +1,33 @@
+I> Chức năng cơ bản (cần có)
+
+1.Trang quản lý tiêu chí
+
+    Thêm / sửa / xóa tiêu chí (ví dụ: chi phí, thời gian, UX, độ phổ biến, nhân lực...).
+
+    Đặt mô tả cho từng tiêu chí để dễ hiểu.
+
+2.Trang quản lý phương án
+
+    Thêm các lựa chọn (ví dụ: Android, iOS, Flutter, React Native).
+
+    Cho phép nhập thông tin mô tả.
+
+3.So sánh cặp đôi (Pairwise comparison)
+
+    Form nhập ma trận so sánh tiêu chí (theo thang điểm Saaty 1–9).
+
+    Form nhập ma trận so sánh phương án theo từng tiêu chí.
+
+4.Tính toán AHP
+
+    Chuẩn hóa ma trận → tính trọng số tiêu chí.
+
+    Tính trọng số phương án.
+
+    Kiểm tra Consistency Ratio (CR), cảnh báo nếu CR > 0.1.
+
+5.Kết quả ra quyết định
+
+    Hiển thị bảng xếp hạng phương án.
+
+    Vẽ biểu đồ (bar chart, radar chart, pie chart) để trực quan.
