@@ -2,16 +2,18 @@
 
 import React, { useState } from 'react';
 import { Smartphone, Menu, X, BarChart3, Users, Zap, ChevronDown } from 'lucide-react';
+import { useUser } from '@/contexts/UserContext';
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const { user, loading, signInWithGoogle, signOut } = useUser();
 
   return (
     <header className="bg-gradient-to-r from-black via-gray-900 to-black border-b border-gray-800 relative">
       {/* Background pattern */}
       <div className="absolute inset-0 bg-gradient-to-br from-gray-900/20 to-gray-800/20"></div>
-      
+
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
@@ -32,34 +34,44 @@ export default function Header() {
             <a href="#" className="text-gray-300 hover:text-white transition-colors duration-200 font-medium">
               Trang chủ
             </a>
-            
+
             {/* Dropdown */}
             <div className="relative">
-              <button 
+              <button
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                 className="flex items-center space-x-1 text-gray-300 hover:text-white transition-colors duration-200 font-medium"
               >
                 <span>Giải pháp</span>
-                <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''
+                  }`} />
               </button>
-              
+
               {isDropdownOpen && (
                 <div className="absolute top-full mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl py-2 z-50">
-                  <a href="#" className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">
+                  <a
+                    href="#"
+                    className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+                  >
                     <BarChart3 className="h-5 w-5 text-gray-400" />
                     <div>
                       <div className="font-medium">Phân tích dữ liệu</div>
                       <div className="text-sm text-gray-500">Báo cáo và thống kê</div>
                     </div>
                   </a>
-                  <a href="#" className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">
+                  <a
+                    href="#"
+                    className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+                  >
                     <Users className="h-5 w-5 text-gray-400" />
                     <div>
                       <div className="font-medium">Quản lý dự án</div>
                       <div className="text-sm text-gray-500">Theo dõi tiến độ</div>
                     </div>
                   </a>
-                  <a href="#" className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">
+                  <a
+                    href="#"
+                    className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+                  >
                     <Zap className="h-5 w-5 text-gray-400" />
                     <div>
                       <div className="font-medium">Tối ưu hóa</div>
@@ -80,10 +92,26 @@ export default function Header() {
 
           {/* CTA Button và Mobile Menu */}
           <div className="flex items-center space-x-4">
-            <button className="hidden md:block bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-6 py-2 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl border border-gray-600">
-              Bắt đầu ngay
-            </button>
-            
+            {!loading && (
+              user ? (
+                <div className="flex items-center space-x-3 text-gray-300">
+                  <span className="font-medium">{user.email}</span>
+                  <button
+                    onClick={signOut}
+                    className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded"
+                  >
+                    Đăng xuất
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={signInWithGoogle}
+                  className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-6 py-2 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl border border-gray-600"
+                >
+                  Đăng nhập Google
+                </button>
+              )
+            )}
             {/* Mobile menu button */}
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
