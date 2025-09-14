@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Smartphone, Menu, X, BarChart3, Users, Zap, ChevronDown } from 'lucide-react';
 import { useUser } from '@/contexts/UserContext';
 import Image from 'next/image';
+import Link from 'next/link';
 
 
 export default function Header() {
@@ -33,9 +34,9 @@ export default function Header() {
 
           {/* Navigation Desktop */}
           <nav className="hidden md:flex items-center space-x-8">
-            <a href="#" className="text-gray-300 hover:text-white transition-colors duration-200 font-medium">
+            <Link href="/" className="text-gray-300 hover:text-white transition-colors duration-200 font-medium">
               Trang chủ
-            </a>
+            </Link>
 
             {/* Dropdown */}
             <div className="relative">
@@ -50,8 +51,8 @@ export default function Header() {
 
               {isDropdownOpen && (
                 <div className="absolute top-full mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl py-2 z-50">
-                  <a
-                    href="#"
+                  <Link
+                    href="/analysis"
                     className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
                   >
                     <BarChart3 className="h-5 w-5 text-gray-400" />
@@ -59,9 +60,10 @@ export default function Header() {
                       <div className="font-medium">Phân tích dữ liệu</div>
                       <div className="text-sm text-gray-500">Báo cáo và thống kê</div>
                     </div>
-                  </a>
-                  <a
-                    href="#"
+                  </Link>
+
+                  <Link
+                    href="/sessions"
                     className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
                   >
                     <Users className="h-5 w-5 text-gray-400" />
@@ -69,9 +71,10 @@ export default function Header() {
                       <div className="font-medium">Quản lý dự án</div>
                       <div className="text-sm text-gray-500">Theo dõi tiến độ</div>
                     </div>
-                  </a>
-                  <a
-                    href="#"
+                  </Link>
+
+                  <Link
+                    href="/optimization"
                     className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
                   >
                     <Zap className="h-5 w-5 text-gray-400" />
@@ -79,7 +82,7 @@ export default function Header() {
                       <div className="font-medium">Tối ưu hóa</div>
                       <div className="text-sm text-gray-500">Hiệu suất ứng dụng</div>
                     </div>
-                  </a>
+                  </Link>
                 </div>
               )}
             </div>
@@ -146,24 +149,35 @@ export default function Header() {
         {isMenuOpen && (
           <div className="md:hidden py-4 border-t border-gray-800">
             <nav className="flex flex-col space-y-4">
-              <a href="#" className="text-gray-300 hover:text-white transition-colors font-medium">
+              <Link href="/sessions" className="text-gray-300 hover:text-white transition-colors font-medium">
                 Trang chủ
-              </a>
+              </Link>
               <div className="space-y-2">
                 <div className="text-gray-300 font-medium">Giải pháp</div>
                 <div className="pl-4 space-y-2">
-                  <a href="#" className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors">
+                  <Link
+                    href="/analysis"
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors"
+                  >
                     <BarChart3 className="h-4 w-4" />
                     <span>Phân tích dữ liệu</span>
-                  </a>
-                  <a href="#" className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors">
+                  </Link>
+
+                  <Link
+                    href="/sessions"
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors"
+                  >
                     <Users className="h-4 w-4" />
                     <span>Quản lý dự án</span>
-                  </a>
-                  <a href="#" className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors">
+                  </Link>
+
+                  <Link
+                    href="/optimization"
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors"
+                  >
                     <Zap className="h-4 w-4" />
                     <span>Tối ưu hóa</span>
-                  </a>
+                  </Link>
                 </div>
               </div>
               <a href="#" className="text-gray-300 hover:text-white transition-colors font-medium">
