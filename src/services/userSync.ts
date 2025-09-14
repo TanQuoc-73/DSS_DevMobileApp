@@ -3,14 +3,14 @@ import { supabase } from '@/lib/supabaseClient';
 export async function syncUserToDb(user: any) {
   if (!user) return;
 
-  // Kiểm tra user đã tồn tại chưa
+  // Dùng maybeSingle để tránh lỗi khi không có dữ liệu
   const { data, error } = await supabase
     .from('users')
     .select('id')
     .eq('id', user.id)
-    .single();
+    .maybeSingle();
 
-  if (error && error.code !== 'PGRST116') {
+  if (error) {
     console.error('Error checking user:', error);
     return;
   }
@@ -20,19 +20,17 @@ export async function syncUserToDb(user: any) {
     const { error: insertError } = await supabase.from('users').insert({
       id: user.id,
       email: user.email,
-      full_name: user.user_metadata?.full_name || null,
+      full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || null,
       company: user.user_metadata?.company || null,
-      role: 'developer',
+      role: 'developer', // default
     });
 
     if (insertError) {
-      console.error(
-        'Error inserting user:',
-        insertError.message,
-        insertError.details,
-        insertError.hint,
-        insertError.code,
-      );
+      console.error('Error inserting user:', insertError);
+    } else {
+      console.log('User inserted successfully');
     }
+  } else {
+    console.log('User already exists in DB');
   }
 }

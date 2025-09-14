@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { Smartphone, Menu, X, BarChart3, Users, Zap, ChevronDown } from 'lucide-react';
 import { useUser } from '@/contexts/UserContext';
+import Image from 'next/image';
+
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -91,35 +93,53 @@ export default function Header() {
           </nav>
 
           {/* CTA Button và Mobile Menu */}
-          <div className="flex items-center space-x-4">
-            {!loading && (
-              user ? (
-                <div className="flex items-center space-x-3 text-gray-300">
-                  <span className="font-medium">{user.email}</span>
-                  <button
-                    onClick={signOut}
-                    className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded"
-                  >
-                    Đăng xuất
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={signInWithGoogle}
-                  className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-6 py-2 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl border border-gray-600"
-                >
-                  Đăng nhập Google
-                </button>
-              )
-            )}
-            {/* Mobile menu button */}
+              <div className="flex items-center space-x-4">
+      {!loading && (
+        user ? (
+          <div className="flex items-center space-x-3 text-gray-300">
+            {/* Avatar + Tên Google */}
+            <div className="flex items-center space-x-2"> 
+              {user.avatar_url && (
+                <Image
+  src={user?.avatar_url || '/default-avatar.png'}
+  alt="Avatar"
+  width={32}
+  height={32}
+  className="rounded-full"
+/>
+              )}
+              <span className="font-medium">
+                {user.full_name || user.email}
+              </span>
+            </div>
+
+            {/* Nút Đăng xuất */}
             <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="md:hidden p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-300 hover:text-white"
+              onClick={signOut}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded"
             >
-              {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+              Đăng xuất
             </button>
           </div>
+    ) : (
+      <button
+        onClick={signInWithGoogle}
+        className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-6 py-2 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl border border-gray-600"
+      >
+        Đăng nhập Google
+      </button>
+    )
+  )}
+
+  {/* Mobile menu button */}
+  <button
+    onClick={() => setIsMenuOpen(!isMenuOpen)}
+    className="md:hidden p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-300 hover:text-white"
+  >
+    {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+  </button>
+</div>
+
         </div>
 
         {/* Mobile Navigation */}

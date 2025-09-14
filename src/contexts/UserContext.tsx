@@ -1,12 +1,25 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { syncUserToDb } from '@/services/userSync';
 
+// User interface đồng bộ với bảng "users" trong DB
 interface User {
   id: string;
   email: string;
+  full_name?: string | null;
+  company?: string | null;
+  role?: string | null;
+  avatar_url?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface UserContextType {
@@ -23,36 +36,65 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Lấy session khi load app
     supabase.auth.getSession().then(async ({ data }) => {
       const sessionUser = data.session?.user;
       if (sessionUser) {
-        setUser({ id: sessionUser.id, email: sessionUser.email || '' });
+        const mappedUser: User = {
+          id: sessionUser.id,
+          email: sessionUser.email || '',
+          full_name:
+            sessionUser.user_metadata?.full_name ||
+            sessionUser.email?.split('@')[0] ||
+            null,
+          avatar_url: sessionUser.user_metadata?.avatar_url || null,
+          company: sessionUser.user_metadata?.company || null,
+          role: 'developer',
+        };
+        setUser(mappedUser);
         await syncUserToDb(sessionUser);
       }
       setLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        setUser({ id: session.user.id, email: session.user.email || '' });
-        await syncUserToDb(session.user);
-      } else {
-        setUser(null);
+    // Nghe sự kiện login/logout
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (session?.user) {
+          const mappedUser: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            full_name:
+              session.user.user_metadata?.full_name ||
+              session.user.email?.split('@')[0] ||
+              null,
+            avatar_url: session.user.user_metadata?.avatar_url || null,
+            company: session.user.user_metadata?.company || null,
+            role: 'developer',
+          };
+          setUser(mappedUser);
+          await syncUserToDb(session.user);
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    );
 
     return () => listener?.subscription.unsubscribe();
   }, []);
 
+  // Đăng nhập với Google
   const signInWithGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({ provider: 'google' });
     if (error) console.error('Login error:', error.message);
   };
 
+  // Đăng xuất
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) console.error('Logout error:', error.message);
+    else setUser(null);
   };
 
   return (
@@ -62,6 +104,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// Hook để gọi user trong component
 export function useUser() {
   const context = useContext(UserContext);
   if (context === undefined) {
