@@ -9,6 +9,21 @@ export interface AhpCriterion {
   parent_id?: string | null;
 }
 
+export async function calculateAhp(sessionId: string) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const res = await fetch(`/api/sessions/${sessionId}/ahp/calculate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session?.access_token}`,
+    },
+  });
+  if (!res.ok) throw new Error('Failed to calculate AHP');
+  return res.json();
+}
+
 // Alternatives vs Criteria
 export interface AltPairwiseItem {
   criteria_id: string;

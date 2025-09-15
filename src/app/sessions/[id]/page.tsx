@@ -7,7 +7,7 @@ import { getSessionById } from "@/services/sessionService";
 import { getRequirements, upsertRequirements, type ProjectRequirementsPayload } from "@/services/requirementsService";
 import { getPlatforms, type Platform } from "@/services/platformsService";
 import { getPlatformAnalyses, upsertPlatformAnalysis, type PlatformAnalysisPayload } from "@/services/platformAnalysisService";
-import { getCriteria, getPairwise, upsertPairwise, type AhpCriterion } from "@/services/ahpService";
+import { getCriteria, getPairwise, upsertPairwise, getAltPairwise, upsertAltPairwise, calculateAhp, type AhpCriterion } from "@/services/ahpService";
 
 interface Session {
   id: string;
@@ -62,6 +62,28 @@ export default function SessionDetailPage() {
   const [pairwiseL2, setPairwiseL2] = useState<Record<string, number>>({}); // key i|j where i<j
   const [ahpL2Loading, setAhpL2Loading] = useState(false);
   const [ahpL2Saving, setAhpL2Saving] = useState(false);
+  // Alternatives vs Criteria
+  const [criteriaAllL2, setCriteriaAllL2] = useState<AhpCriterion[]>([]);
+  const [altSelectedCriteria, setAltSelectedCriteria] = useState<string | ''>('');
+  const [altPairwise, setAltPairwise] = useState<Record<string, number>>({}); // key altI|altJ where i<j
+  const [altLoading, setAltLoading] = useState(false);
+  const [altSaving, setAltSaving] = useState(false);
+  // AHP results
+  const [calcLoading, setCalcLoading] = useState(false);
+  const [ahpResult, setAhpResult] = useState<any | null>(null);
+  // Inline messages for saves
+  const [ahpL1Msg, setAhpL1Msg] = useState<string | null>(null);
+  const [ahpL2Msg, setAhpL2Msg] = useState<string | null>(null);
+  const [altMsg, setAltMsg] = useState<string | null>(null);
+  // Top tabs (scroll to sections)
+  const [activeTab, setActiveTab] = useState<'overview' | 'requirements' | 'platforms' | 'ahp' | 'results'>('overview');
+  const jumpTo = (id: string) => {
+    setActiveTab(id as any);
+    if (typeof window !== 'undefined') {
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   useEffect(() => {
     async function load() {
@@ -80,6 +102,103 @@ export default function SessionDetailPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params?.id]);
+
+  // Load all level-2 criteria once for Alternatives vs Criteria selector
+  useEffect(() => {
+    let isMounted = true;
+    const loadAllL2 = async () => {
+      try {
+        const list = await getCriteria(2);
+        if (!isMounted) return;
+        setCriteriaAllL2(list || []);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    loadAllL2();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Load alternative pairwise when criteria selected
+  useEffect(() => {
+    let isMounted = true;
+    const loadAltPairs = async () => {
+      if (!params?.id || !altSelectedCriteria) {
+        setAltPairwise({});
+        return;
+      }
+      try {
+        setAltLoading(true);
+        const rows = await getAltPairwise(params.id, altSelectedCriteria);
+        if (!isMounted) return;
+        const map: Record<string, number> = {};
+        (rows || []).forEach((r: any) => {
+          const i = r.alternative_i_id as string;
+          const j = r.alternative_j_id as string;
+          const key = i < j ? `${i}|${j}` : `${j}|${i}`;
+          map[key] = Number(r.comparison_value);
+        });
+        setAltPairwise(map);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!isMounted) return;
+        setAltLoading(false);
+      }
+    };
+    loadAltPairs();
+    return () => { isMounted = false; };
+  }, [params?.id, altSelectedCriteria]);
+
+  const handleSetAltPair = (iId: string, jId: string, val: number) => {
+    const key = iId < jId ? `${iId}|${jId}` : `${jId}|${iId}`;
+    setAltPairwise(prev => ({ ...prev, [key]: val }));
+  };
+
+  const handleSaveAltPairs = async () => {
+    if (!params?.id || !altSelectedCriteria || platforms.length < 2) return;
+    try {
+      setAltSaving(true);
+      const items: any[] = [];
+      for (let a = 0; a < platforms.length; a++) {
+        for (let b = a + 1; b < platforms.length; b++) {
+          const iId = platforms[a].id;
+          const jId = platforms[b].id;
+          const key = `${iId}|${jId}`;
+          const v = altPairwise[key];
+          if (!v) continue;
+          items.push({
+            criteria_id: altSelectedCriteria,
+            alternative_i_id: iId,
+            alternative_j_id: jId,
+            comparison_value: v,
+          });
+        }
+      }
+      if (items.length > 0) {
+        await upsertAltPairwise(params.id, items);
+      }
+      setAltMsg("Đã lưu so sánh nền tảng theo tiêu chí");
+      setTimeout(() => setAltMsg(null), 2500);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAltSaving(false);
+    }
+  };
+
+  const handleCalculateAhp = async () => {
+    if (!params?.id) return;
+    try {
+      setCalcLoading(true);
+      const res = await calculateAhp(params.id);
+      setAhpResult(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCalcLoading(false);
+    }
+  };
 
   // Load requirements after session is ready
   useEffect(() => {
@@ -188,6 +307,8 @@ export default function SessionDetailPage() {
       if (items.length > 0) {
         await upsertPairwise(params.id, items);
       }
+      setAhpL1Msg("Đã lưu so sánh Level 1");
+      setTimeout(() => setAhpL1Msg(null), 2500);
     } catch (e) {
       console.error(e);
     } finally {
@@ -260,6 +381,8 @@ export default function SessionDetailPage() {
       if (items.length > 0) {
         await upsertPairwise(params.id, items);
       }
+      setAhpL2Msg("Đã lưu so sánh Level 2");
+      setTimeout(() => setAhpL2Msg(null), 2500);
     } catch (e) {
       console.error(e);
     } finally {
@@ -374,6 +497,30 @@ export default function SessionDetailPage() {
       {/* Content */}
       <div className="px-4 sm:px-6 lg:px-8 pb-12">
         <div className="max-w-5xl mx-auto">
+          {/* Tabs Navigation */}
+          <div className="sticky top-0 z-10 bg-black/40 backdrop-blur supports-[backdrop-filter]:bg-black/30 border-b border-gray-800 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-2 overflow-x-auto py-3">
+              {[
+                { id: 'overview', label: 'Tổng quan' },
+                { id: 'requirements', label: 'Yêu cầu' },
+                { id: 'platforms', label: 'Nền tảng' },
+                { id: 'ahp', label: 'AHP' },
+                { id: 'results', label: 'Kết quả' },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => jumpTo(t.id)}
+                  className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap transition-colors ${
+                    activeTab === (t.id as any)
+                      ? 'bg-gray-800 border-gray-600 text-white'
+                      : 'bg-transparent border-gray-700 text-gray-300 hover:border-gray-500 hover:text-white'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
           {loading ? (
             <div className="flex justify-center items-center py-20">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white" />
@@ -387,33 +534,175 @@ export default function SessionDetailPage() {
           ) : (
             <div className="space-y-6">
               {/* Overview Card */}
-              <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
+              <div id="overview" className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
                     <div className="bg-gradient-to-br from-gray-700 to-gray-600 p-3 rounded-xl">
                       <BarChart3 className="h-6 w-6 text-white" />
+                      </div>
+
+              {/* AHP: Kết quả tính toán và xếp hạng */}
+              <div id="results" className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-semibold text-white">Kết quả AHP</h3>
+                  <button onClick={handleCalculateAhp} disabled={calcLoading}
+                    className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60">
+                    {calcLoading ? 'Đang tính...' : 'Tính toán AHP'}
+                  </button>
+                </div>
+                {!ahpResult ? (
+                  <div className="text-gray-400 text-sm">Chưa có kết quả. Nhấn "Tính toán AHP" để tạo kết quả.</div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Bảng xếp hạng nền tảng */}
+                    <div>
+                      <h4 className="text-white font-semibold mb-2">Xếp hạng nền tảng</h4>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="text-gray-300">
+                              <th className="text-left py-2 pr-4">#</th>
+                              <th className="text-left py-2 pr-4">Nền tảng</th>
+                              <th className="text-left py-2 pr-4">Điểm</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(ahpResult.final_scores as Record<string, number>)
+                              .sort((a: any, b: any) => b[1] - a[1])
+                              .map(([altId, score], idx) => (
+                                <tr key={altId} className="border-t border-gray-800 text-gray-300">
+                                  <td className="py-2 pr-4">{idx + 1}</td>
+                                  <td className="py-2 pr-4">{platforms.find(p => p.id === altId)?.name || altId}</td>
+                                  <td className="py-2 pr-4">{score.toFixed(4)}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
+
+                    {/* Trọng số tiêu chí con */}
+                    <div>
+                      <h4 className="text-white font-semibold mb-2">Trọng số tiêu chí (Level 2)</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {Object.entries(ahpResult.criteria_weights as Record<string, number>)
+                          .sort((a: any, b: any) => b[1] - a[1])
+                          .map(([code, w]) => (
+                            <div key={code} className="border border-gray-800 rounded-lg p-3 text-gray-300">
+                              <div className="text-sm font-medium">{code}</div>
+                              <div className="text-xs text-gray-400">{(w as number).toFixed(4)}</div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+
+                    {/* Consistency Ratios */}
+                    <div>
+                      <h4 className="text-white font-semibold mb-2">Consistency Ratios (CR)</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {Object.entries(ahpResult.consistency_ratios as Record<string, number>)
+                          .map(([key, val]) => (
+                            <div key={key} className="border border-gray-800 rounded-lg p-3 text-gray-300">
+                              <div className="text-sm font-medium">{key}</div>
+                              <div className="text-xs text-gray-400">{(val as number).toFixed(4)}</div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* AHP: Alternatives vs Criteria */}
+              <details className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
+                <summary className="flex items-center justify-between cursor-pointer select-none">
+                  <span className="text-xl font-semibold text-white">AHP - So sánh nền tảng theo tiêu chí</span>
+                  <span className="text-xs text-gray-400">Mở/đóng</span>
+                </summary>
+                <div className="mt-4 flex items-center justify-between gap-3 mb-4">
+                  <select
+                    value={altSelectedCriteria}
+                    onChange={(e)=>setAltSelectedCriteria(e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white"
+                  >
+                    <option value="">-- Chọn tiêu chí (Level 2) --</option>
+                    {criteriaAllL2.map(c => (
+                      <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
+                    ))}
+                  </select>
+                  <button onClick={handleSaveAltPairs} disabled={altSaving}
+                    className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60">
+                    {altSaving ? 'Đang lưu...' : 'Lưu so sánh'}
+                  </button>
+                </div>
+                {!altSelectedCriteria ? (
+                  <div className="text-gray-400 text-sm">Vui lòng chọn một tiêu chí Level 2 để so sánh các nền tảng.</div>
+                ) : altLoading ? (
+                  <div className="text-gray-400 text-sm">Đang tải cặp so sánh...</div>
+                ) : platforms.length < 2 ? (
+                  <div className="text-gray-400 text-sm">Chưa đủ nền tảng để so sánh.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {platforms.map((pi, idx) => (
+                      <div key={pi.id} className="space-y-3">
+                        {platforms.slice(idx + 1).map((pj) => {
+                          const key = `${pi.id}|${pj.id}`;
+                          const current = altPairwise[key] ?? 1;
+                          return (
+                            <div key={key} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center border border-gray-800 rounded-lg p-3">
+                              <div className="text-gray-300 text-sm">{pi.name} so với {pj.name}</div>
+                              <select value={current}
+                                onChange={(e)=>handleSetAltPair(pi.id, pj.id, Number(e.target.value))}
+                                className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                                <option value={0.111}>1/9 - Cực kém</option>
+                                <option value={0.125}>1/8</option>
+                                <option value={0.142}>1/7</option>
+                                <option value={0.167}>1/6</option>
+                                <option value={0.2}>1/5</option>
+                                <option value={0.25}>1/4</option>
+                                <option value={0.333}>1/3</option>
+                                <option value={0.5}>1/2</option>
+                                <option value={1}>1 - Bằng nhau</option>
+                                <option value={2}>2 - Hơi hơn</option>
+                                <option value={3}>3 - Hơn</option>
+                                <option value={4}>4</option>
+                                <option value={5}>5 - Mạnh</option>
+                                <option value={6}>6</option>
+                                <option value={7}>7 - Rất mạnh</option>
+                                <option value={8}>8</option>
+                                <option value={9}>9 - Cực mạnh</option>
+                              </select>
+                              <div className="text-xs text-gray-500">Chọn mức độ ưu tiên của "{pi.name}" so với "{pj.name}"</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </details>
 
               {/* AHP: So sánh cặp tiêu chí (Level 2 theo tiêu chí cha) */}
               <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-semibold text-white">AHP - So sánh cặp tiêu chí (Level 2)</h3>
-                  <div className="flex items-center gap-3">
-                    <select
-                      value={selectedParentL2}
-                      onChange={(e)=>setSelectedParentL2(e.target.value)}
-                      className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white"
-                    >
-                      <option value="">-- Chọn tiêu chí cha --</option>
-                      {criteriaL1.map(c => (
-                        <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
-                      ))}
-                    </select>
-                    <button onClick={handleSavePairwiseL2} disabled={ahpL2Saving}
-                      className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60">
-                      {ahpL2Saving ? 'Đang lưu...' : 'Lưu so sánh'}
-                    </button>
-                  </div>
+                <summary className="flex items-center justify-between cursor-pointer select-none">
+                  <span className="text-xl font-semibold text-white">AHP - So sánh cặp tiêu chí (Level 2)</span>
+                  <span className="text-xs text-gray-400">Mở/đóng</span>
+                </summary>
+                <div className="mt-4 flex items-center justify-between gap-3 mb-4">
+                  <select
+                    value={selectedParentL2}
+                    onChange={(e)=>setSelectedParentL2(e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white"
+                  >
+                    <option value="">-- Chọn tiêu chí cha --</option>
+                    {criteriaL1.map(c => (
+                      <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
+                    ))}
+                  </select>
+                  <button onClick={handleSavePairwiseL2} disabled={ahpL2Saving}
+                    className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60">
+                    {ahpL2Saving ? 'Đang lưu...' : 'Lưu so sánh'}
+                  </button>
                 </div>
                 {!selectedParentL2 ? (
                   <div className="text-gray-400 text-sm">Vui lòng chọn tiêu chí cha để so sánh các tiêu chí con.</div>
@@ -487,7 +776,7 @@ export default function SessionDetailPage() {
               </div>
 
               {/* Project Requirements Form */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div id="requirements" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <form onSubmit={handleSaveRequirements} className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700 space-y-4">
                   <h3 className="text-xl font-semibold text-white">Yêu cầu dự án</h3>
                   {reqLoading && (
@@ -641,7 +930,7 @@ export default function SessionDetailPage() {
                   </div>
                 </form>
 
-                <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
+                <div id="platforms" className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
                   <h3 className="text-xl font-semibold text-white mb-3">Phân tích nền tảng</h3>
                   {paLoading ? (
                     <div className="text-gray-400 text-sm">Đang tải danh sách nền tảng...</div>
@@ -737,9 +1026,12 @@ export default function SessionDetailPage() {
               </div>
 
               {/* AHP: So sánh cặp tiêu chí (Level 1) */}
-              <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-semibold text-white">AHP - So sánh cặp tiêu chí (Level 1)</h3>
+              <details id="ahp" className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700" open>
+                <summary className="flex items-center justify-between cursor-pointer select-none">
+                  <span className="text-xl font-semibold text-white">AHP - So sánh cặp tiêu chí (Level 1)</span>
+                  <span className="text-xs text-gray-400">Mở/đóng</span>
+                </summary>
+                <div className="mt-4 flex items-center justify-end mb-4">
                   <button onClick={handleSavePairwiseL1} disabled={ahpSaving}
                     className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60">
                     {ahpSaving ? 'Đang lưu...' : 'Lưu so sánh'}
@@ -789,7 +1081,7 @@ export default function SessionDetailPage() {
                     ))}
                   </div>
                 )}
-              </div>
+              </details>
             </div>
           )}
         </div>
