@@ -3,11 +3,14 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Calendar, BarChart3 } from "lucide-react";
+import Link from "next/link";
+import Modal from "@/components/ui/Modal";
+import { ResponsiveContainer, BarChart as RBarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { getSessionById } from "@/services/sessionService";
 import { getRequirements, upsertRequirements, type ProjectRequirementsPayload } from "@/services/requirementsService";
 import { getPlatforms, type Platform } from "@/services/platformsService";
 import { getPlatformAnalyses, upsertPlatformAnalysis, type PlatformAnalysisPayload } from "@/services/platformAnalysisService";
-import { getCriteria, getPairwise, upsertPairwise, getAltPairwise, upsertAltPairwise, calculateAhp, type AhpCriterion } from "@/services/ahpService";
+import { getCriteria, getPairwise, upsertPairwise, getAltPairwise, upsertAltPairwise, calculateAhp, upsertRecommendation, type AhpCriterion } from "@/services/ahpService";
 
 interface Session {
   id: string;
@@ -77,6 +80,15 @@ export default function SessionDetailPage() {
   const [altMsg, setAltMsg] = useState<string | null>(null);
   // Top tabs (scroll to sections)
   const [activeTab, setActiveTab] = useState<'overview' | 'requirements' | 'platforms' | 'ahp' | 'results'>('overview');
+  // Modals
+  const [openL1, setOpenL1] = useState(false);
+  const [openL2, setOpenL2] = useState(false);
+  const [openAlt, setOpenAlt] = useState(false);
+  const [openResults, setOpenResults] = useState(false);
+  // Recommendation
+  const [recRationale, setRecRationale] = useState<string>("");
+  const [recSaving, setRecSaving] = useState(false);
+  const [recMsg, setRecMsg] = useState<string | null>(null);
   const jumpTo = (id: string) => {
     setActiveTab(id as any);
     if (typeof window !== 'undefined') {
@@ -165,8 +177,7 @@ export default function SessionDetailPage() {
           const iId = platforms[a].id;
           const jId = platforms[b].id;
           const key = `${iId}|${jId}`;
-          const v = altPairwise[key];
-          if (!v) continue;
+          const v = (altPairwise[key] ?? 1);
           items.push({
             criteria_id: altSelectedCriteria,
             alternative_i_id: iId,
@@ -175,9 +186,7 @@ export default function SessionDetailPage() {
           });
         }
       }
-      if (items.length > 0) {
-        await upsertAltPairwise(params.id, items);
-      }
+      await upsertAltPairwise(params.id, items);
       setAltMsg("Đã lưu so sánh nền tảng theo tiêu chí");
       setTimeout(() => setAltMsg(null), 2500);
     } catch (e) {
@@ -197,6 +206,31 @@ export default function SessionDetailPage() {
       console.error(e);
     } finally {
       setCalcLoading(false);
+    }
+  };
+
+  const handleSaveRecommendation = async () => {
+    if (!params?.id || !ahpResult || !ahpResult.final_scores) return;
+    try {
+      setRecSaving(true);
+      setRecMsg(null);
+      const entries = Object.entries(ahpResult.final_scores as Record<string, number>);
+      if (!entries.length) return;
+      const total = entries.reduce((s, [, v]) => s + Number(v || 0), 0) || 1;
+      const [bestId, bestScore] = entries.sort((a, b) => Number(b[1]) - Number(a[1]))[0];
+      const confidence = Math.max(0, Math.min(1, Number(bestScore) / total));
+      await upsertRecommendation(params.id, {
+        recommended_platform_id: bestId,
+        confidence,
+        rationale: recRationale || null,
+      });
+      setRecMsg("Đã lưu khuyến nghị");
+      setTimeout(() => setRecMsg(null), 2500);
+    } catch (e: any) {
+      console.error(e);
+      setRecMsg(e?.message || "Lưu khuyến nghị thất bại");
+    } finally {
+      setRecSaving(false);
     }
   };
 
@@ -293,8 +327,7 @@ export default function SessionDetailPage() {
           const iId = criteriaL1[a].id;
           const jId = criteriaL1[b].id;
           const key = `${iId}|${jId}`;
-          const v = pairwiseL1[key];
-          if (!v) continue;
+          const v = (pairwiseL1[key] ?? 1);
           items.push({
             criteria_level: 1,
             parent_criteria_id: null,
@@ -304,9 +337,7 @@ export default function SessionDetailPage() {
           });
         }
       }
-      if (items.length > 0) {
-        await upsertPairwise(params.id, items);
-      }
+      await upsertPairwise(params.id, items);
       setAhpL1Msg("Đã lưu so sánh Level 1");
       setTimeout(() => setAhpL1Msg(null), 2500);
     } catch (e) {
@@ -367,8 +398,7 @@ export default function SessionDetailPage() {
           const iId = criteriaL2[a].id;
           const jId = criteriaL2[b].id;
           const key = `${iId}|${jId}`;
-          const v = pairwiseL2[key];
-          if (!v) continue;
+          const v = (pairwiseL2[key] ?? 1);
           items.push({
             criteria_level: 2,
             parent_criteria_id: selectedParentL2,
@@ -378,9 +408,7 @@ export default function SessionDetailPage() {
           });
         }
       }
-      if (items.length > 0) {
-        await upsertPairwise(params.id, items);
-      }
+      await upsertPairwise(params.id, items);
       setAhpL2Msg("Đã lưu so sánh Level 2");
       setTimeout(() => setAhpL2Msg(null), 2500);
     } catch (e) {
@@ -456,6 +484,84 @@ export default function SessionDetailPage() {
     }
   };
 
+  // Suggest analysis values from AHP results (non-destructive: only fill if empty)
+  const suggestFromAHP = (platformId: string) => {
+    if (!ahpResult?.final_scores) return;
+    const raw = Number((ahpResult.final_scores as Record<string, number>)[platformId] || 0);
+    const scaled = Math.max(0, Math.min(100, Math.round(raw * 100)));
+    setAnalyses(prev => {
+      const cur = prev[platformId] || { platform_id: platformId } as PlatformAnalysisPayload;
+      return {
+        ...prev,
+        [platformId]: {
+          ...cur,
+          total_score: cur.total_score ?? scaled,
+          time_score: cur.time_score ?? scaled,
+          feasibility_score: cur.feasibility_score ?? Math.max(50, Math.min(100, scaled)),
+          maintenance_score: cur.maintenance_score ?? Math.max(50, Math.min(100, scaled)),
+          market_fit_score: cur.market_fit_score ?? Math.max(50, Math.min(100, scaled)),
+          cost_score: cur.cost_score ?? scaled,
+        },
+      };
+    });
+  };
+
+  // Suggest analysis values from project requirements (non-destructive where possible)
+  const suggestFromRequirements = (platformId: string) => {
+    const r = requirements;
+    const cur = analyses[platformId] || { platform_id: platformId } as PlatformAnalysisPayload;
+
+    const months = r.timeline_months ?? 6; // default 6 months
+    const time_score = Math.max(0, Math.min(100, 110 - months * 10));
+
+    let estimated_cost: number | null = cur.estimated_cost ?? null;
+    let cost_score = cur.cost_score ?? null;
+    if (r.budget_range === '<200M') {
+      estimated_cost = estimated_cost ?? 150;
+      cost_score = cost_score ?? 85;
+    } else if (r.budget_range === '200-500M') {
+      estimated_cost = estimated_cost ?? 300;
+      cost_score = cost_score ?? 60;
+    } else if (r.budget_range === '>500M') {
+      estimated_cost = estimated_cost ?? 600;
+      cost_score = cost_score ?? 40;
+    }
+
+    const totalDevs = r.total_developers ?? 2;
+    const feasibility_score = cur.feasibility_score ?? (totalDevs >= 3 ? 80 : 60);
+    const maintenance_score = cur.maintenance_score ?? 70;
+
+    let market_fit_score = cur.market_fit_score ?? null;
+    if (market_fit_score == null) {
+      if (r.target_market === 'global') market_fit_score = 80;
+      else if (r.target_market === 'asia') market_fit_score = 70;
+      else if (r.target_market === 'vietnam') market_fit_score = 60;
+      else market_fit_score = 65;
+    }
+
+    let risk_level = cur.risk_level ?? null;
+    if (risk_level == null) {
+      risk_level = totalDevs < 2 ? 'high' : totalDevs < 4 ? 'medium' : 'low';
+    }
+
+    setAnalyses(prev => ({
+      ...prev,
+      [platformId]: {
+        ...cur,
+        platform_id: platformId,
+        time_score: cur.time_score ?? time_score,
+        cost_score: cost_score ?? cur.cost_score ?? undefined,
+        feasibility_score,
+        maintenance_score,
+        market_fit_score,
+        estimated_cost: estimated_cost ?? cur.estimated_cost ?? undefined,
+        estimated_months: cur.estimated_months ?? months,
+        risk_level,
+        total_score: cur.total_score ?? Math.round(((cost_score ?? 0) + time_score + feasibility_score + maintenance_score + (market_fit_score ?? 0)) / 5),
+      },
+    }));
+  };
+
   const handleSaveRequirements = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!params?.id) return;
@@ -497,6 +603,18 @@ export default function SessionDetailPage() {
       {/* Content */}
       <div className="px-4 sm:px-6 lg:px-8 pb-12">
         <div className="max-w-5xl mx-auto">
+          {/* AHP - Công cụ (mở modal) */}
+          <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-4 rounded-2xl border border-gray-700 mb-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">AHP - Công cụ</h3>
+              <div className="flex gap-2">
+                <button onClick={()=>setOpenL1(true)} className="px-3 py-2 rounded-lg border border-gray-600 bg-gray-800 text-white text-sm hover:border-gray-500">So sánh Level 1</button>
+                <button onClick={()=>setOpenL2(true)} className="px-3 py-2 rounded-lg border border-gray-600 bg-gray-800 text-white text-sm hover:border-gray-500">So sánh Level 2</button>
+                <button onClick={()=>setOpenAlt(true)} className="px-3 py-2 rounded-lg border border-gray-600 bg-gray-800 text-white text-sm hover:border-gray-500">Alternatives theo tiêu chí</button>
+                <button onClick={()=>setOpenResults(true)} className="px-3 py-2 rounded-lg border border-gray-600 bg-gray-800 text-white text-sm hover:border-gray-500">Kết quả AHP</button>
+              </div>
+            </div>
+          </div>
           {/* Tabs Navigation */}
           <div className="sticky top-0 z-10 bg-black/40 backdrop-blur supports-[backdrop-filter]:bg-black/30 border-b border-gray-800 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-2 overflow-x-auto py-3">
@@ -540,81 +658,51 @@ export default function SessionDetailPage() {
                     <div className="bg-gradient-to-br from-gray-700 to-gray-600 p-3 rounded-xl">
                       <BarChart3 className="h-6 w-6 text-white" />
                       </div>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">
+                      {session.project_name || "Untitled Project"}
+                    </h2>
+                    <div className="flex items-center space-x-2 text-gray-400 text-sm mt-1">
+                      <Calendar className="h-4 w-4" />
+                      <span>
+                        {session.created_at
+                          ? new Date(session.created_at).toLocaleString("vi-VN")
+                          : ""}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                {session.status && (
+                  <span className="px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-sm border border-green-500/30">
+                    {session.status}
+                  </span>
+                )}
+                <p className="text-gray-300 leading-relaxed mt-3">
+                  {session.description || "Không có mô tả"}
+                </p>
+              </div>
 
               {/* AHP: Kết quả tính toán và xếp hạng */}
               <div id="results" className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between">
                   <h3 className="text-xl font-semibold text-white">Kết quả AHP</h3>
-                  <button onClick={handleCalculateAhp} disabled={calcLoading}
-                    className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60">
-                    {calcLoading ? 'Đang tính...' : 'Tính toán AHP'}
-                  </button>
-                </div>
-                {!ahpResult ? (
-                  <div className="text-gray-400 text-sm">Chưa có kết quả. Nhấn "Tính toán AHP" để tạo kết quả.</div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* Bảng xếp hạng nền tảng */}
-                    <div>
-                      <h4 className="text-white font-semibold mb-2">Xếp hạng nền tảng</h4>
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full text-sm">
-                          <thead>
-                            <tr className="text-gray-300">
-                              <th className="text-left py-2 pr-4">#</th>
-                              <th className="text-left py-2 pr-4">Nền tảng</th>
-                              <th className="text-left py-2 pr-4">Điểm</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(ahpResult.final_scores as Record<string, number>)
-                              .sort((a: any, b: any) => b[1] - a[1])
-                              .map(([altId, score], idx) => (
-                                <tr key={altId} className="border-t border-gray-800 text-gray-300">
-                                  <td className="py-2 pr-4">{idx + 1}</td>
-                                  <td className="py-2 pr-4">{platforms.find(p => p.id === altId)?.name || altId}</td>
-                                  <td className="py-2 pr-4">{score.toFixed(4)}</td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Trọng số tiêu chí con */}
-                    <div>
-                      <h4 className="text-white font-semibold mb-2">Trọng số tiêu chí (Level 2)</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Object.entries(ahpResult.criteria_weights as Record<string, number>)
-                          .sort((a: any, b: any) => b[1] - a[1])
-                          .map(([code, w]) => (
-                            <div key={code} className="border border-gray-800 rounded-lg p-3 text-gray-300">
-                              <div className="text-sm font-medium">{code}</div>
-                              <div className="text-xs text-gray-400">{(w as number).toFixed(4)}</div>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-
-                    {/* Consistency Ratios */}
-                    <div>
-                      <h4 className="text-white font-semibold mb-2">Consistency Ratios (CR)</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Object.entries(ahpResult.consistency_ratios as Record<string, number>)
-                          .map(([key, val]) => (
-                            <div key={key} className="border border-gray-800 rounded-lg p-3 text-gray-300">
-                              <div className="text-sm font-medium">{key}</div>
-                              <div className="text-xs text-gray-400">{(val as number).toFixed(4)}</div>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
+                  <div className="flex gap-2">
+                    <button onClick={handleCalculateAhp} disabled={calcLoading}
+                      className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60">
+                      {calcLoading ? 'Đang tính...' : 'Tính toán AHP'}
+                    </button>
+                    <button onClick={()=>setOpenResults(true)}
+                      className="px-4 py-2 rounded-lg border border-gray-600 bg-gray-800 text-white text-sm hover:border-gray-500">
+                      Xem chi tiết
+                    </button>
                   </div>
-                )}
+                </div>
+                <div className="text-gray-400 text-sm mt-3">Mở modal để xem bảng xếp hạng, biểu đồ và CR chi tiết. {ahpResult ? '' : 'Chưa có kết quả lần nào.'}</div>
               </div>
 
               {/* AHP: Alternatives vs Criteria */}
-              <details className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
+              <details className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700" open>
                 <summary className="flex items-center justify-between cursor-pointer select-none">
                   <span className="text-xl font-semibold text-white">AHP - So sánh nền tảng theo tiêu chí</span>
                   <span className="text-xs text-gray-400">Mở/đóng</span>
@@ -683,7 +771,7 @@ export default function SessionDetailPage() {
               </details>
 
               {/* AHP: So sánh cặp tiêu chí (Level 2 theo tiêu chí cha) */}
-              <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
+              <details className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
                 <summary className="flex items-center justify-between cursor-pointer select-none">
                   <span className="text-xl font-semibold text-white">AHP - So sánh cặp tiêu chí (Level 2)</span>
                   <span className="text-xs text-gray-400">Mở/đóng</span>
@@ -749,32 +837,7 @@ export default function SessionDetailPage() {
                     ))}
                   </div>
                 )}
-              </div>
-                    <div>
-                      <h2 className="text-2xl font-bold text-white">
-                        {session.project_name || "Untitled Project"}
-                      </h2>
-                      <div className="flex items-center space-x-2 text-gray-400 text-sm mt-1">
-                        <Calendar className="h-4 w-4" />
-                        <span>
-                          {session.created_at
-                            ? new Date(session.created_at).toLocaleString("vi-VN")
-                            : ""}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  {session.status && (
-                    <span className="px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-sm border border-green-500/30">
-                      {session.status}
-                    </span>
-                  )}
-                </div>
-                <p className="text-gray-300 leading-relaxed">
-                  {session.description || "Không có mô tả"}
-                </p>
-              </div>
-
+              </details>
               {/* Project Requirements Form */}
               <div id="requirements" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <form onSubmit={handleSaveRequirements} className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700 space-y-4">
@@ -942,18 +1005,34 @@ export default function SessionDetailPage() {
                         const a = analyses[pf.id] || { platform_id: pf.id } as PlatformAnalysisPayload;
                         return (
                           <div key={pf.id} className="border border-gray-700 rounded-xl p-4">
-                            <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center justify-between mb-3 gap-3">
                               <div>
                                 <div className="font-semibold text-white">{pf.name}</div>
                                 <div className="text-xs text-gray-400">{pf.type}</div>
                               </div>
-                              <button
-                                onClick={() => handleSavePlatform(pf.id)}
-                                disabled={paSavingId === pf.id}
-                                className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60"
-                              >
-                                {paSavingId === pf.id ? 'Đang lưu...' : 'Lưu phân tích'}
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => suggestFromAHP(pf.id)}
+                                  className="px-3 py-2 rounded-lg border border-blue-700 bg-blue-600/20 text-blue-300 text-xs hover:bg-blue-600/30"
+                                >
+                                  Gợi ý từ AHP
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => suggestFromRequirements(pf.id)}
+                                  className="px-3 py-2 rounded-lg border border-emerald-700 bg-emerald-600/20 text-emerald-300 text-xs hover:bg-emerald-600/30"
+                                >
+                                  Tính từ yêu cầu
+                                </button>
+                                <button
+                                  onClick={() => handleSavePlatform(pf.id)}
+                                  disabled={paSavingId === pf.id}
+                                  className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60"
+                                >
+                                  {paSavingId === pf.id ? 'Đang lưu...' : 'Lưu phân tích'}
+                                </button>
+                              </div>
                             </div>
 
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -1084,8 +1163,173 @@ export default function SessionDetailPage() {
               </details>
             </div>
           )}
+          {/* Close wrappers: max-w-5xl and content padding container */}
         </div>
       </div>
-    </div>
+
+      {/* Modal: AHP Results */}
+        <Modal
+          open={openResults}
+          onClose={() => setOpenResults(false)}
+          title="Kết quả AHP"
+          size="xl"
+          footer={
+            <>
+              {recMsg && (
+                <span className="text-gray-300 text-sm mr-auto">{recMsg}</span>
+              )}
+              <button
+                onClick={() => setOpenResults(false)}
+                className="px-3 py-2 rounded-lg border border-gray-600 bg-gray-800 text-white text-sm"
+              >
+                Đóng
+              </button>
+              <button
+                onClick={handleCalculateAhp}
+                disabled={calcLoading}
+                className="px-3 py-2 rounded-lg border border-gray-600 bg-gray-700 text-white text-sm disabled:opacity-60"
+              >
+                {calcLoading ? "Đang tính..." : "Tính toán AHP"}
+              </button>
+            </>
+          }
+        >
+          {!ahpResult ? (
+            <div className="text-gray-400 text-sm">
+              Chưa có kết quả. Nhấn "Tính toán AHP" để tạo kết quả.
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div>
+                <h4 className="text-white font-semibold mb-2">Xếp hạng nền tảng</h4>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-300">
+                        <th className="text-left py-2 pr-4">#</th>
+                        <th className="text-left py-2 pr-4">Nền tảng</th>
+                        <th className="text-left py-2 pr-4">Điểm</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(ahpResult.final_scores as Record<string, number>)
+                        .sort((a: any, b: any) => b[1] - a[1])
+                        .map(([altId, score], idx) => (
+                          <tr key={altId} className="border-t border-gray-800 text-gray-300">
+                            <td className="py-2 pr-4">{idx + 1}</td>
+                            <td className="py-2 pr-4">{platforms.find((p) => p.id === altId)?.name || altId}</td>
+                            <td className="py-2 pr-4">{Number(score).toFixed(4)}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              {/* Biểu đồ xếp hạng nền tảng (Bar) */}
+              <div>
+                <h4 className="text-white font-semibold mb-2">Biểu đồ xếp hạng nền tảng</h4>
+                <div className="w-full h-64 bg-gray-900/40 rounded-xl border border-gray-800">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RBarChart
+                      data={Object.entries(ahpResult.final_scores || {})
+                        .map(([altId, score]: any) => ({
+                          name: platforms.find((p) => p.id === altId)?.name || altId,
+                          score: Number(score),
+                        }))
+                        .sort((a, b) => b.score - a.score)}
+                      margin={{ top: 10, right: 20, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fill: '#9CA3AF', fontSize: 12 }}
+                        interval={0}
+                        angle={-15}
+                        textAnchor="end"
+                        height={60}
+                      />
+                      <YAxis tick={{ fill: '#9CA3AF', fontSize: 12 }} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', color: '#E5E7EB' }}
+                      />
+                      <Bar dataKey="score" fill="#60A5FA" radius={[6, 6, 0, 0]} />
+                    </RBarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Trọng số tiêu chí (Level 2) */}
+              <div>
+                <h4 className="text-white font-semibold mb-2">Trọng số tiêu chí (Level 2)</h4>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Danh sách trọng số (top 12) */}
+                  <div className="space-y-2">
+                    {Object.entries(ahpResult.criteria_weights as Record<string, number>)
+                      .sort((a: any, b: any) => b[1] - a[1])
+                      .slice(0, 12)
+                      .map(([code, w]) => (
+                        <div
+                          key={code}
+                          className="border border-gray-800 rounded-lg p-3 text-gray-300 flex items-center justify-between"
+                        >
+                          <span className="text-sm font-medium">{code}</span>
+                          <span className="text-xs text-gray-400">{Number(w).toFixed(4)}</span>
+                        </div>
+                      ))}
+                  </div>
+                  {/* Biểu đồ trọng số tiêu chí (Bar) */}
+                  <div className="w-full h-64 bg-gray-900/40 rounded-xl border border-gray-800">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RBarChart
+                        data={Object.entries(ahpResult.criteria_weights || {})
+                          .map(([code, w]: any) => ({ code, weight: Number(w) }))
+                          .sort((a, b) => b.weight - a.weight)
+                          .slice(0, 12)}
+                        margin={{ top: 10, right: 20, left: 0, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis
+                          dataKey="code"
+                          tick={{ fill: '#9CA3AF', fontSize: 12 }}
+                          interval={0}
+                          angle={-15}
+                          textAnchor="end"
+                          height={60}
+                        />
+                        <YAxis tick={{ fill: '#9CA3AF', fontSize: 12 }} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', color: '#E5E7EB' }}
+                        />
+                        <Bar dataKey="weight" fill="#34D399" radius={[6, 6, 0, 0]} />
+                      </RBarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+              {/* Ghi chú/khuyến nghị tối giản (tùy chọn mở rộng sau) */}
+              <div>
+                <h4 className="text-white font-semibold mb-2">Khuyến nghị</h4>
+                <textarea
+                  value={recRationale}
+                  onChange={(e) => setRecRationale(e.target.value)}
+                  placeholder="Lý do/ghi chú cho khuyến nghị..."
+                />
+                <div className="flex justify-end mt-2">
+                  <button
+                    onClick={handleSaveRecommendation}
+                    disabled={recSaving}
+                    className="px-4 py-2 rounded-lg border border-gray-600 bg-gray-700 text-white text-sm disabled:opacity-60"
+                  >
+                    {recSaving ? "Đang lưu..." : "Lưu khuyến nghị"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </Modal>
+      
+      </div>
   );
 }
+
+

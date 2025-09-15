@@ -9,6 +9,40 @@ export interface AhpCriterion {
   parent_id?: string | null;
 }
 
+export interface RecommendationPayload {
+  recommended_platform_id: string;
+  confidence: number; // 0..1
+  rationale?: string | null;
+}
+
+export async function getRecommendation(sessionId: string) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const res = await fetch(`/api/sessions/${sessionId}/recommendations`, {
+    cache: 'no-store',
+    headers: { Authorization: `Bearer ${session?.access_token}` },
+  });
+  if (!res.ok) throw new Error('Failed to fetch recommendation');
+  return res.json();
+}
+
+export async function upsertRecommendation(sessionId: string, payload: RecommendationPayload) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const res = await fetch(`/api/sessions/${sessionId}/recommendations`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session?.access_token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to save recommendation');
+  return res.json();
+}
+
 export async function calculateAhp(sessionId: string) {
   const {
     data: { session },
