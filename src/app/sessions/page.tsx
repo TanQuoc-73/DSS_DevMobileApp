@@ -4,24 +4,45 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Eye, Trash2, BarChart3, Calendar, User, Search, Filter } from 'lucide-react';
 import { getSessions, deleteSession } from '@/services/sessionService';
+import { useUser } from '@/contexts/UserContext';
 
 export default function SessionsPage() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading } = useUser();
 
   useEffect(() => {
-    loadSessions();
-  }, []);
+    let isMounted = true;
 
-  const loadSessions = async () => {
+    const init = async () => {
+      if (authLoading) return; // Chờ xác thực xong
+      if (!user) {
+        // Không đăng nhập: dừng loading và xóa dữ liệu
+        if (!isMounted) return;
+        setSessions([]);
+        setLoading(false);
+        return;
+      }
+      await loadSessions(isMounted);
+    };
+
+    init();
+    return () => {
+      isMounted = false;
+    };
+  }, [authLoading, user]);
+
+  const loadSessions = async (isMounted: boolean = true) => {
     try {
       setLoading(true);
       const data = await getSessions();
+      if (!isMounted) return;
       setSessions(data);
     } catch (err) {
       console.error(err);
     } finally {
+      if (!isMounted) return;
       setLoading(false);
     }
   };

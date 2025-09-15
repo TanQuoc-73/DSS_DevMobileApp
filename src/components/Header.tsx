@@ -52,47 +52,36 @@ export default function Header() {
               {isDropdownOpen && (
                 <div className="absolute top-full mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl py-2 z-50">
                   <Link
-                    href="/analysis"
+                    href="/sessions"
                     className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
                   >
                     <BarChart3 className="h-5 w-5 text-gray-400" />
                     <div>
-                      <div className="font-medium">Phân tích dữ liệu</div>
-                      <div className="text-sm text-gray-500">Báo cáo và thống kê</div>
+                      <div className="font-medium">Phiên phân tích</div>
+                      <div className="text-sm text-gray-500">Danh sách & quản lý</div>
                     </div>
                   </Link>
 
                   <Link
-                    href="/sessions"
+                    href="/sessions/new"
                     className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
                   >
                     <Users className="h-5 w-5 text-gray-400" />
                     <div>
-                      <div className="font-medium">Quản lý dự án</div>
-                      <div className="text-sm text-gray-500">Theo dõi tiến độ</div>
-                    </div>
-                  </Link>
-
-                  <Link
-                    href="/optimization"
-                    className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
-                  >
-                    <Zap className="h-5 w-5 text-gray-400" />
-                    <div>
-                      <div className="font-medium">Tối ưu hóa</div>
-                      <div className="text-sm text-gray-500">Hiệu suất ứng dụng</div>
+                      <div className="font-medium">Tạo session mới</div>
+                      <div className="text-sm text-gray-500">Bắt đầu phân tích DSS</div>
                     </div>
                   </Link>
                 </div>
               )}
             </div>
 
-            <a href="#" className="text-gray-300 hover:text-white transition-colors duration-200 font-medium">
+            <Link href="/docs" className="text-gray-300 hover:text-white transition-colors duration-200 font-medium">
               Tài liệu
-            </a>
-            <a href="#" className="text-gray-300 hover:text-white transition-colors duration-200 font-medium">
+            </Link>
+            <Link href="/contact" className="text-gray-300 hover:text-white transition-colors duration-200 font-medium">
               Liên hệ
-            </a>
+            </Link>
           </nav>
 
           {/* CTA Button và Mobile Menu */}
@@ -149,43 +138,35 @@ export default function Header() {
         {isMenuOpen && (
           <div className="md:hidden py-4 border-t border-gray-800">
             <nav className="flex flex-col space-y-4">
-              <Link href="/sessions" className="text-gray-300 hover:text-white transition-colors font-medium">
+              <Link href="/" className="text-gray-300 hover:text-white transition-colors font-medium">
                 Trang chủ
               </Link>
               <div className="space-y-2">
                 <div className="text-gray-300 font-medium">Giải pháp</div>
                 <div className="pl-4 space-y-2">
                   <Link
-                    href="/analysis"
-                    className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors"
-                  >
-                    <BarChart3 className="h-4 w-4" />
-                    <span>Phân tích dữ liệu</span>
-                  </Link>
-
-                  <Link
                     href="/sessions"
                     className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors"
                   >
-                    <Users className="h-4 w-4" />
-                    <span>Quản lý dự án</span>
+                    <BarChart3 className="h-4 w-4" />
+                    <span>Phiên phân tích</span>
                   </Link>
 
                   <Link
-                    href="/optimization"
+                    href="/sessions/new"
                     className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors"
                   >
-                    <Zap className="h-4 w-4" />
-                    <span>Tối ưu hóa</span>
+                    <Users className="h-4 w-4" />
+                    <span>Tạo session mới</span>
                   </Link>
                 </div>
               </div>
-              <a href="#" className="text-gray-300 hover:text-white transition-colors font-medium">
+              <Link href="/docs" className="text-gray-300 hover:text-white transition-colors font-medium">
                 Tài liệu
-              </a>
-              <a href="#" className="text-gray-300 hover:text-white transition-colors font-medium">
+              </Link>
+              <Link href="/contact" className="text-gray-300 hover:text-white transition-colors font-medium">
                 Liên hệ
-              </a>
+              </Link>
               <button className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 text-left border border-gray-600">
                 Bắt đầu ngay
               </button>

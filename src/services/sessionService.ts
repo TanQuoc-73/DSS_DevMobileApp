@@ -6,6 +6,7 @@ export async function getSessions() {
   } = await supabase.auth.getSession();
 
   const res = await fetch('/api/sessions', {
+    cache: 'no-store',
     headers: {
       Authorization: `Bearer ${session?.access_token}`, 
     },
@@ -54,6 +55,7 @@ export async function getSessionById(id: string) {
   } = await supabase.auth.getSession();
 
   const res = await fetch(`/api/sessions/${id}`, {
+    cache: 'no-store',
     headers: {
       Authorization: `Bearer ${session?.access_token}`,
     },
