@@ -10,7 +10,6 @@ import React, {
 import { supabase } from '@/lib/supabaseClient';
 import { syncUserToDb } from '@/services/userSync';
 
-// User interface đồng bộ với bảng "users" trong DB
 interface User {
   id: string;
   email: string;
@@ -36,10 +35,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Lấy session khi load app
-    supabase.auth.getSession().then(async ({ data }) => {
+    let isMounted = true;
+
+    async function initializeAuth() {
+      const { data } = await supabase.auth.getSession();
       const sessionUser = data.session?.user;
-      if (sessionUser) {
+      if (sessionUser && isMounted) {
         const mappedUser: User = {
           id: sessionUser.id,
           email: sessionUser.email || '',
@@ -54,13 +55,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
         setUser(mappedUser);
         await syncUserToDb(sessionUser);
       }
-      setLoading(false);
-    });
+      if (isMounted) setLoading(false);
+    }
 
-    // Nghe sự kiện login/logout
+    initializeAuth();
+
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
-        if (session?.user) {
+        if (session?.user && isMounted) {
           const mappedUser: User = {
             id: session.user.id,
             email: session.user.email || '',
@@ -74,14 +76,17 @@ export function UserProvider({ children }: { children: ReactNode }) {
           };
           setUser(mappedUser);
           await syncUserToDb(session.user);
-        } else {
+        } else if (isMounted) {
           setUser(null);
         }
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     );
 
-    return () => listener?.subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      listener?.subscription.unsubscribe();
+    };
   }, []);
 
   // Đăng nhập với Google

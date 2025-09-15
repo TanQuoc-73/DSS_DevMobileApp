@@ -47,3 +47,18 @@ export async function deleteSession(id: string) {
   if (!res.ok) throw new Error('Failed to delete session');
   return res.json();
 }
+
+export async function getSessionById(id: string) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const res = await fetch(`/api/sessions/${id}`, {
+    headers: {
+      Authorization: `Bearer ${session?.access_token}`,
+    },
+  });
+
+  if (!res.ok) throw new Error('Failed to fetch session');
+  return res.json();
+}
