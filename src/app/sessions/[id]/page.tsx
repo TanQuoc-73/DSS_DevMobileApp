@@ -7,6 +7,7 @@ import { getSessionById } from "@/services/sessionService";
 import { getRequirements, upsertRequirements, type ProjectRequirementsPayload } from "@/services/requirementsService";
 import { getPlatforms, type Platform } from "@/services/platformsService";
 import { getPlatformAnalyses, upsertPlatformAnalysis, type PlatformAnalysisPayload } from "@/services/platformAnalysisService";
+import { getCriteria, getPairwise, upsertPairwise, type AhpCriterion } from "@/services/ahpService";
 
 interface Session {
   id: string;
@@ -50,6 +51,17 @@ export default function SessionDetailPage() {
   const [paLoading, setPaLoading] = useState(false);
   const [paSavingId, setPaSavingId] = useState<string | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, PlatformAnalysisPayload>>({});
+  // AHP level-1 states
+  const [criteriaL1, setCriteriaL1] = useState<AhpCriterion[]>([]);
+  const [pairwiseL1, setPairwiseL1] = useState<Record<string, number>>({}); // key: iId|jId (i<j)
+  const [ahpLoading, setAhpLoading] = useState(false);
+  const [ahpSaving, setAhpSaving] = useState(false);
+  // AHP level-2 states
+  const [selectedParentL2, setSelectedParentL2] = useState<string | ''>('');
+  const [criteriaL2, setCriteriaL2] = useState<AhpCriterion[]>([]);
+  const [pairwiseL2, setPairwiseL2] = useState<Record<string, number>>({}); // key i|j where i<j
+  const [ahpL2Loading, setAhpL2Loading] = useState(false);
+  const [ahpL2Saving, setAhpL2Saving] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -110,6 +122,150 @@ export default function SessionDetailPage() {
       isMounted = false;
     };
   }, [params?.id]);
+
+  // Load AHP level-1 criteria and pairwise
+  useEffect(() => {
+    let isMounted = true;
+    const loadAHP = async () => {
+      if (!params?.id) return;
+      try {
+        setAhpLoading(true);
+        const [criteria, pairs] = await Promise.all([
+          getCriteria(1),
+          getPairwise(params.id, 1),
+        ]);
+        if (!isMounted) return;
+        setCriteriaL1(criteria || []);
+        const map: Record<string, number> = {};
+        (pairs || []).forEach((p: any) => {
+          const i = p.criteria_i_id as string;
+          const j = p.criteria_j_id as string;
+          const key = i < j ? `${i}|${j}` : `${j}|${i}`;
+          // if it's j,i the reciprocal will be stored when rendering
+          map[key] = Number(p.comparison_value);
+        });
+        setPairwiseL1(map);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!isMounted) return;
+        setAhpLoading(false);
+      }
+    };
+    loadAHP();
+    return () => {
+      isMounted = false;
+    };
+  }, [params?.id]);
+
+  const handleSetPairL1 = (iId: string, jId: string, val: number) => {
+    const key = iId < jId ? `${iId}|${jId}` : `${jId}|${iId}`;
+    setPairwiseL1(prev => ({ ...prev, [key]: val }));
+  };
+
+  const handleSavePairwiseL1 = async () => {
+    if (!params?.id || criteriaL1.length < 2) return;
+    try {
+      setAhpSaving(true);
+      const items: any[] = [];
+      // Build all pairs i<j from current map
+      for (let a = 0; a < criteriaL1.length; a++) {
+        for (let b = a + 1; b < criteriaL1.length; b++) {
+          const iId = criteriaL1[a].id;
+          const jId = criteriaL1[b].id;
+          const key = `${iId}|${jId}`;
+          const v = pairwiseL1[key];
+          if (!v) continue;
+          items.push({
+            criteria_level: 1,
+            parent_criteria_id: null,
+            criteria_i_id: iId,
+            criteria_j_id: jId,
+            comparison_value: v,
+          });
+        }
+      }
+      if (items.length > 0) {
+        await upsertPairwise(params.id, items);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAhpSaving(false);
+    }
+  };
+
+  // Load AHP Level 2 when parent selected
+  useEffect(() => {
+    let isMounted = true;
+    const loadL2 = async () => {
+      if (!params?.id || !selectedParentL2) {
+        setCriteriaL2([]);
+        setPairwiseL2({});
+        return;
+      }
+      try {
+        setAhpL2Loading(true);
+        const [children, pairs] = await Promise.all([
+          getCriteria(2, selectedParentL2),
+          getPairwise(params.id, 2, selectedParentL2),
+        ]);
+        if (!isMounted) return;
+        setCriteriaL2(children || []);
+        const map: Record<string, number> = {};
+        (pairs || []).forEach((p: any) => {
+          const i = p.criteria_i_id as string;
+          const j = p.criteria_j_id as string;
+          const key = i < j ? `${i}|${j}` : `${j}|${i}`;
+          map[key] = Number(p.comparison_value);
+        });
+        setPairwiseL2(map);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!isMounted) return;
+        setAhpL2Loading(false);
+      }
+    };
+    loadL2();
+    return () => { isMounted = false; };
+  }, [params?.id, selectedParentL2]);
+
+  const handleSetPairL2 = (iId: string, jId: string, val: number) => {
+    const key = iId < jId ? `${iId}|${jId}` : `${jId}|${iId}`;
+    setPairwiseL2(prev => ({ ...prev, [key]: val }));
+  };
+
+  const handleSavePairwiseL2 = async () => {
+    if (!params?.id || !selectedParentL2 || criteriaL2.length < 2) return;
+    try {
+      setAhpL2Saving(true);
+      const items: any[] = [];
+      for (let a = 0; a < criteriaL2.length; a++) {
+        for (let b = a + 1; b < criteriaL2.length; b++) {
+          const iId = criteriaL2[a].id;
+          const jId = criteriaL2[b].id;
+          const key = `${iId}|${jId}`;
+          const v = pairwiseL2[key];
+          if (!v) continue;
+          items.push({
+            criteria_level: 2,
+            parent_criteria_id: selectedParentL2,
+            criteria_i_id: iId,
+            criteria_j_id: jId,
+            comparison_value: v,
+          });
+        }
+      }
+      if (items.length > 0) {
+        await upsertPairwise(params.id, items);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAhpL2Saving(false);
+    }
+  };
 
   // Load platforms and existing analyses (top-level effect)
   useEffect(() => {
@@ -237,6 +393,74 @@ export default function SessionDetailPage() {
                     <div className="bg-gradient-to-br from-gray-700 to-gray-600 p-3 rounded-xl">
                       <BarChart3 className="h-6 w-6 text-white" />
                     </div>
+
+              {/* AHP: So sánh cặp tiêu chí (Level 2 theo tiêu chí cha) */}
+              <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-semibold text-white">AHP - So sánh cặp tiêu chí (Level 2)</h3>
+                  <div className="flex items-center gap-3">
+                    <select
+                      value={selectedParentL2}
+                      onChange={(e)=>setSelectedParentL2(e.target.value)}
+                      className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white"
+                    >
+                      <option value="">-- Chọn tiêu chí cha --</option>
+                      {criteriaL1.map(c => (
+                        <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
+                      ))}
+                    </select>
+                    <button onClick={handleSavePairwiseL2} disabled={ahpL2Saving}
+                      className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60">
+                      {ahpL2Saving ? 'Đang lưu...' : 'Lưu so sánh'}
+                    </button>
+                  </div>
+                </div>
+                {!selectedParentL2 ? (
+                  <div className="text-gray-400 text-sm">Vui lòng chọn tiêu chí cha để so sánh các tiêu chí con.</div>
+                ) : ahpL2Loading ? (
+                  <div className="text-gray-400 text-sm">Đang tải tiêu chí con...</div>
+                ) : criteriaL2.length < 2 ? (
+                  <div className="text-gray-400 text-sm">Chưa đủ tiêu chí con để so sánh.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {criteriaL2.map((ci, idx) => (
+                      <div key={ci.id} className="space-y-3">
+                        {criteriaL2.slice(idx + 1).map((cj) => {
+                          const key = `${ci.id}|${cj.id}`;
+                          const current = pairwiseL2[key] ?? 1;
+                          return (
+                            <div key={key} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center border border-gray-800 rounded-lg p-3">
+                              <div className="text-gray-300 text-sm">{ci.name} so với {cj.name}</div>
+                              <select value={current}
+                                onChange={(e)=>handleSetPairL2(ci.id, cj.id, Number(e.target.value))}
+                                className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                                <option value={0.111}>1/9 - Cực kém</option>
+                                <option value={0.125}>1/8</option>
+                                <option value={0.142}>1/7</option>
+                                <option value={0.167}>1/6</option>
+                                <option value={0.2}>1/5</option>
+                                <option value={0.25}>1/4</option>
+                                <option value={0.333}>1/3</option>
+                                <option value={0.5}>1/2</option>
+                                <option value={1}>1 - Bằng nhau</option>
+                                <option value={2}>2 - Hơi hơn</option>
+                                <option value={3}>3 - Hơn</option>
+                                <option value={4}>4</option>
+                                <option value={5}>5 - Mạnh</option>
+                                <option value={6}>6</option>
+                                <option value={7}>7 - Rất mạnh</option>
+                                <option value={8}>8</option>
+                                <option value={9}>9 - Cực mạnh</option>
+                              </select>
+                              <div className="text-xs text-gray-500">Chọn mức độ ưu tiên của "{ci.name}" so với "{cj.name}"</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
                     <div>
                       <h2 className="text-2xl font-bold text-white">
                         {session.project_name || "Untitled Project"}
@@ -510,6 +734,61 @@ export default function SessionDetailPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* AHP: So sánh cặp tiêu chí (Level 1) */}
+              <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-2xl border border-gray-700">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-semibold text-white">AHP - So sánh cặp tiêu chí (Level 1)</h3>
+                  <button onClick={handleSavePairwiseL1} disabled={ahpSaving}
+                    className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600 disabled:opacity-60">
+                    {ahpSaving ? 'Đang lưu...' : 'Lưu so sánh'}
+                  </button>
+                </div>
+                {ahpLoading ? (
+                  <div className="text-gray-400 text-sm">Đang tải tiêu chí...</div>
+                ) : criteriaL1.length < 2 ? (
+                  <div className="text-gray-400 text-sm">Chưa đủ tiêu chí để so sánh.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {criteriaL1.map((ci, idx) => (
+                      <div key={ci.id} className="space-y-3">
+                        {criteriaL1.slice(idx + 1).map((cj) => {
+                          const key = `${ci.id}|${cj.id}`;
+                          const current = pairwiseL1[key] ?? 1;
+                          return (
+                            <div key={key} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center border border-gray-800 rounded-lg p-3">
+                              <div className="text-gray-300 text-sm">{ci.name} so với {cj.name}</div>
+                              <select value={current}
+                                onChange={(e)=>handleSetPairL1(ci.id, cj.id, Number(e.target.value))}
+                                className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                                {/* Saaty scale simplified including reciprocals */}
+                                <option value={0.111}>1/9 - Cực kém</option>
+                                <option value={0.125}>1/8</option>
+                                <option value={0.142}>1/7</option>
+                                <option value={0.167}>1/6</option>
+                                <option value={0.2}>1/5</option>
+                                <option value={0.25}>1/4</option>
+                                <option value={0.333}>1/3</option>
+                                <option value={0.5}>1/2</option>
+                                <option value={1}>1 - Bằng nhau</option>
+                                <option value={2}>2 - Hơi hơn</option>
+                                <option value={3}>3 - Hơn</option>
+                                <option value={4}>4</option>
+                                <option value={5}>5 - Mạnh</option>
+                                <option value={6}>6</option>
+                                <option value={7}>7 - Rất mạnh</option>
+                                <option value={8}>8</option>
+                                <option value={9}>9 - Cực mạnh</option>
+                              </select>
+                              <div className="text-xs text-gray-500">Chọn mức độ ưu tiên của "{ci.name}" so với "{cj.name}"</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
