@@ -97,6 +97,56 @@ export default function SessionDetailPage() {
     }
   };
 
+  // Initialize Level 1 pairwise matrix from project requirements priorities
+  const initPairwiseFromRequirements = () => {
+    if (!criteriaL1 || criteriaL1.length < 2) {
+      window.alert('Chưa có danh sách tiêu chí Level 1 để khởi tạo.');
+      return;
+    }
+
+    const toNum = (v: any, d = 3) => (typeof v === 'number' && !isNaN(v) ? v : d);
+    const pri = {
+      cost: toNum(requirements.cost_priority, 3),
+      speed: toNum(requirements.speed_priority ?? (requirements.timeline_priority === 'strict' ? 5 : requirements.timeline_priority === 'flexible' ? 2 : 3), 3),
+      quality: toNum(requirements.quality_priority, 3),
+      maintenance: toNum(requirements.maintenance_priority, 3),
+    };
+
+    const getPriorityForCriterion = (nameOrCode: string) => {
+      const s = (nameOrCode || '').toLowerCase();
+      if (s.includes('cost') || s.includes('price') || s.includes('chi')) return pri.cost; // chi phí
+      if (s.includes('time') || s.includes('speed') || s.includes('timeline') || s.includes('thời')) return pri.speed; // thời gian/tốc độ
+      if (s.includes('quality') || s.includes('chất')) return pri.quality; // chất lượng
+      if (s.includes('maint') || s.includes('bảo trì')) return pri.maintenance; // bảo trì
+      return 3; // mặc định trung bình
+    };
+
+    const toSaaty = (diff: number) => {
+      // Map chênh lệch ưu tiên sang thang Saaty đơn giản
+      if (diff >= 2) return 5;
+      if (diff >= 1) return 3;
+      if (diff <= -2) return 1 / 5;
+      if (diff <= -1) return 1 / 3;
+      return 1;
+    };
+
+    const next = { ...pairwiseL1 } as Record<string, number>;
+    for (let a = 0; a < criteriaL1.length; a++) {
+      for (let b = a + 1; b < criteriaL1.length; b++) {
+        const ci = criteriaL1[a];
+        const cj = criteriaL1[b];
+        const pi = getPriorityForCriterion((ci.code || '') + ' ' + (ci.name || ''));
+        const pj = getPriorityForCriterion((cj.code || '') + ' ' + (cj.name || ''));
+        const diff = Number(pi) - Number(pj);
+        const v = toSaaty(diff);
+        next[`${ci.id}|${cj.id}`] = v;
+      }
+    }
+    setPairwiseL1(next);
+    setAhpL1Msg('Đã khởi tạo ma trận Level 1 từ yêu cầu dự án. Hãy rà soát và Lưu so sánh.');
+    setTimeout(() => setAhpL1Msg(null), 3000);
+  };
+
   useEffect(() => {
     async function load() {
       if (!params?.id) return;
@@ -197,6 +247,23 @@ export default function SessionDetailPage() {
   };
 
   const handleCalculateAhp = async () => {
+    // Pre-check: if all pairwise values are empty or = 1, warn user to set preferences first
+    const allOnesOrEmpty = () => {
+      const valuesL1 = Object.values(pairwiseL1 || {});
+      const valuesL2 = Object.values(pairwiseL2 || {});
+      const valuesAlt = Object.values(altPairwise || {});
+      const isEmpty = (arr: any[]) => arr.length === 0;
+      const isAllOnes = (arr: any[]) => arr.length > 0 && arr.every(v => Number(v) === 1);
+      return (
+        (isEmpty(valuesL1) || isAllOnes(valuesL1)) &&
+        (isEmpty(valuesL2) || isAllOnes(valuesL2)) &&
+        (isEmpty(valuesAlt) || isAllOnes(valuesAlt))
+      );
+    };
+    if (allOnesOrEmpty()) {
+      window.alert('Vui lòng thiết lập ma trận so sánh (Level 1/2 hoặc Alternatives) trước khi tính AHP. Các cặp hiện tại đang để mặc định = 1.');
+      return;
+    }
     if (!params?.id) return;
     try {
       setCalcLoading(true);
