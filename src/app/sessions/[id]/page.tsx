@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Calendar, BarChart3 } from "lucide-react";
+import { Session } from "@/types/sessions"
 import Link from "next/link";
 import Modal from "@/components/ui/Modal";
 import { ResponsiveContainer, BarChart as RBarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
@@ -12,14 +13,7 @@ import { getPlatforms, type Platform } from "@/services/platformsService";
 import { getPlatformAnalyses, upsertPlatformAnalysis, type PlatformAnalysisPayload } from "@/services/platformAnalysisService";
 import { getCriteria, getPairwise, upsertPairwise, getAltPairwise, upsertAltPairwise, calculateAhp, upsertRecommendation, type AhpCriterion } from "@/services/ahpService";
 
-interface Session {
-  id: string;
-  project_name?: string;
-  description?: string;
-  status?: string;
-  created_at?: string;
-  updated_at?: string;
-}
+
 
 export default function SessionDetailPage() {
   const params = useParams<{ id: string }>();
@@ -1373,7 +1367,6 @@ export default function SessionDetailPage() {
                   </div>
                 </div>
               </div>
-              {/* Ghi chú/khuyến nghị tối giản (tùy chọn mở rộng sau) */}
               <div>
                 <h4 className="text-white font-semibold mb-2">Khuyến nghị</h4>
                 <textarea
