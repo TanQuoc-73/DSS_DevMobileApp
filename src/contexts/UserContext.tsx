@@ -9,17 +9,7 @@ import React, {
 } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { syncUserToDb } from '@/services/userSync';
-
-interface User {
-  id: string;
-  email: string;
-  full_name?: string | null;
-  company?: string | null;
-  role?: string | null;
-  avatar_url?: string | null;
-  created_at?: string;
-  updated_at?: string;
-}
+import { User } from '@/types/users';
 
 interface UserContextType {
   user: User | null;
@@ -40,20 +30,27 @@ export function UserProvider({ children }: { children: ReactNode }) {
     async function initializeAuth() {
       const { data } = await supabase.auth.getSession();
       const sessionUser = data.session?.user;
+
       if (sessionUser && isMounted) {
-        const mappedUser: User = {
-          id: sessionUser.id,
-          email: sessionUser.email || '',
-          full_name:
-            sessionUser.user_metadata?.full_name ||
-            sessionUser.email?.split('@')[0] ||
-            null,
-          avatar_url: sessionUser.user_metadata?.avatar_url || null,
-          company: sessionUser.user_metadata?.company || null,
-          role: 'developer',
-        };
-        setUser(mappedUser);
-        await syncUserToDb(sessionUser);
+        const dbUser = await syncUserToDb(sessionUser);
+
+        if (dbUser) {
+          setUser(dbUser); // Ưu tiên dữ liệu từ DB
+        } else {
+          // Fallback lấy từ session metadata
+          const mappedUser: User = {
+            id: sessionUser.id,
+            email: sessionUser.email || '',
+            full_name:
+              sessionUser.user_metadata?.full_name ||
+              sessionUser.email?.split('@')[0] ||
+              null,
+            avatar_url: sessionUser.user_metadata?.avatar_url || null,
+            company: sessionUser.user_metadata?.company || null,
+            role: 'developer',
+          };
+          setUser(mappedUser);
+        }
       }
       if (isMounted) setLoading(false);
     }
@@ -63,19 +60,24 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         if (session?.user && isMounted) {
-          const mappedUser: User = {
-            id: session.user.id,
-            email: session.user.email || '',
-            full_name:
-              session.user.user_metadata?.full_name ||
-              session.user.email?.split('@')[0] ||
-              null,
-            avatar_url: session.user.user_metadata?.avatar_url || null,
-            company: session.user.user_metadata?.company || null,
-            role: 'developer',
-          };
-          setUser(mappedUser);
-          await syncUserToDb(session.user);
+          const dbUser = await syncUserToDb(session.user);
+
+          if (dbUser) {
+            setUser(dbUser);
+          } else {
+            const mappedUser: User = {
+              id: session.user.id,
+              email: session.user.email || '',
+              full_name:
+                session.user.user_metadata?.full_name ||
+                session.user.email?.split('@')[0] ||
+                null,
+              avatar_url: session.user.user_metadata?.avatar_url || null,
+              company: session.user.user_metadata?.company || null,
+              role: 'developer',
+            };
+            setUser(mappedUser);
+          }
         } else if (isMounted) {
           setUser(null);
         }
