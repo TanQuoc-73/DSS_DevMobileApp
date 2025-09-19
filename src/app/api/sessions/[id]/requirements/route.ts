@@ -16,12 +16,12 @@ function createServerClient(req: Request) {
   );
 }
 
-// GET requirements by session id
+// ================= GET =================
 export async function GET(
   req: Request,
-  context: { params: Promise<{ id: string }> }
+  context: { params: { id: string } }   // ⬅ params là object, KHÔNG phải Promise
 ) {
-  const { id } = await context.params;
+  const { id } = context.params;
   const supabase = createServerClient(req);
 
   const { data, error } = await supabase
@@ -36,16 +36,16 @@ export async function GET(
   return NextResponse.json(data ?? null);
 }
 
-// PUT create or update requirements for a session
+// ================= PUT =================
 export async function PUT(
   req: Request,
-  context: { params: Promise<{ id: string }> }
+  context: { params: { id: string } }   // ⬅ tương tự ở đây
 ) {
-  const { id } = await context.params;
+  const { id } = context.params;
   const supabase = createServerClient(req);
   const payload = await req.json();
 
-  // Check if a requirements row exists for this session
+  // Kiểm tra đã có requirements cho session chưa
   const { data: existing, error: checkError } = await supabase
     .from('project_requirements')
     .select('id')
@@ -57,6 +57,7 @@ export async function PUT(
   }
 
   if (existing?.id) {
+    // Update
     const { data, error } = await supabase
       .from('project_requirements')
       .update({ ...payload })
@@ -69,6 +70,7 @@ export async function PUT(
     }
     return NextResponse.json(data);
   } else {
+    // Insert mới
     const { data, error } = await supabase
       .from('project_requirements')
       .insert([{ ...payload, session_id: id }])

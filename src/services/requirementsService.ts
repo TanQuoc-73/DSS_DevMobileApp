@@ -26,15 +26,16 @@ export async function getRequirements(sessionId: string) {
 
   const res = await fetch(`/api/sessions/${sessionId}/requirements`, {
     cache: 'no-store',
-    headers: {
-      Authorization: `Bearer ${session?.access_token}`,
-    },
+    headers: { Authorization: `Bearer ${session?.access_token}` },
   });
-  if (!res.ok) throw new Error('Failed to fetch requirements');
+  if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
-export async function upsertRequirements(sessionId: string, payload: ProjectRequirementsPayload) {
+export async function upsertRequirements(
+  sessionId: string,
+  payload: ProjectRequirementsPayload
+) {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -47,6 +48,6 @@ export async function upsertRequirements(sessionId: string, payload: ProjectRequ
     },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error('Failed to save requirements');
+  if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
